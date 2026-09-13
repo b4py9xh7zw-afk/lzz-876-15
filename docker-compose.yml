@@ -44,6 +44,47 @@ services:
             sleep 1
           done
 
+          # 增量表结构（幂等）：老库启动时自动补齐身份核验相关表
+          mysql -h db -uroot -proot exam_system <<'SQL'
+          CREATE TABLE IF NOT EXISTS identity_verifications (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              user_id BIGINT UNSIGNED NOT NULL COMMENT '考生ID',
+              exam_paper_id BIGINT UNSIGNED NOT NULL COMMENT '试卷ID',
+              id_name VARCHAR(50) NOT NULL COMMENT '证件姓名',
+              id_number_masked VARCHAR(60) NOT NULL COMMENT '证件号(脱敏存储)',
+              id_number_hash CHAR(64) NOT NULL COMMENT '证件号HMAC哈希(用于一致性校验)',
+              id_photo_path VARCHAR(255) NULL COMMENT '证件照私有存储路径(清理后置空)',
+              face_photo_path VARCHAR(255) NULL COMMENT '人脸照私有存储路径(清理后置空)',
+              similarity DECIMAL(5,2) NULL COMMENT '人脸比对相似度(0-100)',
+              status ENUM('passed','suspected','failed') NOT NULL COMMENT '核验状态: passed-通过 suspected-疑似 failed-失败',
+              fail_reason VARCHAR(255) NULL COMMENT '未通过原因',
+              reviewed_by BIGINT UNSIGNED NULL COMMENT '人工审核人ID',
+              reviewed_at TIMESTAMP NULL COMMENT '人工审核时间',
+              review_note VARCHAR(255) NULL COMMENT '人工审核备注',
+              attempt INT DEFAULT 1 COMMENT '第几次核验',
+              expires_at TIMESTAMP NULL COMMENT '材料保留截止时间',
+              purged_at TIMESTAMP NULL COMMENT '材料清理时间',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_user_paper (user_id, exam_paper_id),
+              INDEX idx_status (status),
+              INDEX idx_expires_at (expires_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='考前身份核验表';
+
+          CREATE TABLE IF NOT EXISTS identity_verification_audits (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              verification_id BIGINT UNSIGNED NOT NULL COMMENT '核验记录ID',
+              actor_id BIGINT UNSIGNED NULL COMMENT '操作人ID(NULL为系统)',
+              action VARCHAR(50) NOT NULL COMMENT '操作类型: submit/view_id_photo/view_face_photo/review_approve/review_reject/purge',
+              detail VARCHAR(255) NULL COMMENT '操作详情',
+              ip VARCHAR(45) NULL COMMENT '操作IP',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              INDEX idx_verification_id (verification_id),
+              INDEX idx_actor_id (actor_id),
+              INDEX idx_action (action)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='身份核验审计日志表';
+          SQL
+
           table_exists=$$(mysql -h db -uroot -proot -Nse "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='exam_system' AND table_name='users';")
           if [ "$$table_exists" = "1" ]; then
             echo "Database already initialized, skip seed."
@@ -254,6 +295,10 @@ services:
       CACHE_DRIVER: file
       SESSION_DRIVER: file
       QUEUE_CONNECTION: sync
+      IDENTITY_RETENTION_DAYS: 7
+      IDENTITY_MAX_ATTEMPTS: 3
+      FACE_COMPARE_PASS_THRESHOLD: 85
+      FACE_COMPARE_SUSPECT_THRESHOLD: 45
     volumes:
       - backend_storage:/app/storage
       - backend_logs:/app/storage/logs

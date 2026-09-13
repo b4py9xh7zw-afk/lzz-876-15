@@ -27,7 +27,13 @@
             <span>{{ paper.total_time }} 分钟</span>
           </div>
         </div>
-        <button @click="startExam(paper)" class="mt-4 w-full bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 transition-colors">
+        <div class="mt-4 flex items-center text-xs text-gray-400 mb-2">
+          <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          本考试需先完成证件与人脸核验
+        </div>
+        <button @click="startExam(paper)" class="mt-2 w-full bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 transition-colors">
           开始考试
         </button>
       </div>
@@ -59,9 +65,20 @@ onMounted(async () => {
 
 const startExam = async (paper) => {
   try {
-    const response = await api.post(`/exams/${paper.id}/start`)
+    // 先检查身份核验状态，未通过则进入核验流程
+    const check = await api.get(`/identity/exams/${paper.id}/verification`, { skipGlobalErrorHandler: true })
+    if (!check.data.can_start) {
+      router.push(`/exams/${paper.id}/verify`)
+      return
+    }
+    await api.post(`/exams/${paper.id}/start`, {}, { skipGlobalErrorHandler: true })
     router.push(`/exams/${paper.id}`)
   } catch (e) {
+    const code = e.response?.data?.code
+    if (code === 'VERIFICATION_REQUIRED' || code === 'VERIFICATION_SUSPECTED' || code === 'VERIFICATION_FAILED') {
+      router.push(`/exams/${paper.id}/verify`)
+      return
+    }
     alert(e.response?.data?.message || '开始考试失败', '开始考试', 'error')
   }
 }

@@ -88,13 +88,14 @@ node scripts/verify-readme-test-credentials.mjs --manifest qa/.runtime/test-cred
 3. 试卷管理：试卷创建、编辑、题目关联。
 4. 在线考试：开始考试、提交答卷、自动评分。
 5. 成绩统计：个人成绩与管理端统计数据。
+6. 考前身份核验：证件照上传 + 摄像头人脸比对，自动分为 通过/疑似/失败；疑似由监考老师人工确认；核验材料仅用于当次考试，到期自动清理且查看留痕（详见 `docs/identity-verification.md`）。
 
 ## 角色权限
 | 角色 | 可访问模块 |
 |---|---|
-| Student | 在线考试、我的成绩 |
-| Teacher | 在线考试、我的成绩、题库管理、试卷管理 |
-| Admin | 全部功能（含数据统计） |
+| Student | 在线考试（考前需完成身份核验）、我的成绩 |
+| Teacher | 在线考试、我的成绩、题库管理、试卷管理、监考核验（仅本人创建的试卷） |
+| Admin | 全部功能（含数据统计、全部监考核验记录） |
 
 ## 人工验证步骤（建议）
 1. 打开登录页：`http://localhost:8080/login`。
@@ -119,11 +120,20 @@ docker compose exec backend sh -lc "curl -s -X POST http://localhost:8080/api/au
 - CORS 与基础限流已配置。
 
 ## 数据库说明
-当前初始化后包含 10 张核心表（含用户、题目、试卷、考试记录、答案记录等）。
+当前初始化后包含 12 张核心表（含用户、题目、试卷、考试记录、答案记录、身份核验记录、核验审计日志等）。
 
 详见：
 - `docs/Database.sql`
+- `docs/identity-verification.md`
 - `docker-compose.yml` 中 `db-init` 初始化段
+
+## 身份核验材料保留与清理
+- 核验照片仅存私有存储，须经授权接口访问且每次查看写入审计日志。
+- 保留期由 `IDENTITY_RETENTION_DAYS` 控制（默认 7 天），到期自动清理：
+  ```bash
+  docker compose exec backend php artisan identity:purge
+  ```
+  （调度已注册为每日执行；访问接口时发现过期也会即时清理。）
 
 ## 证据目录
 测试与质检证据统一放在 `evidence/`（含 `evidence/run-slot*/`）目录。

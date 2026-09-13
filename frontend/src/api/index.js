@@ -16,6 +16,10 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    // FormData 上传时让浏览器自动生成 multipart 边界
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type']
+    }
     return config
   },
   error => {
@@ -36,6 +40,11 @@ api.interceptors.response.use(
       if (window.location.pathname !== '/login') {
         window.location.href = '/login'
       }
+      return Promise.reject(error)
+    }
+
+    // 请求方可通过 skipGlobalErrorHandler 自行处理错误提示
+    if (error.config?.skipGlobalErrorHandler) {
       return Promise.reject(error)
     }
 

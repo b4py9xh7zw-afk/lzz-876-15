@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ExamPaper;
 use App\Models\ExamRecord;
 use App\Models\ExamRecordAnswer;
+use App\Models\IdentityVerification;
 use App\Models\Question;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -26,6 +27,32 @@ class ExamController extends Controller
 
     public function start(Request $request, ExamPaper $examPaper)
     {
+        $verification = IdentityVerification::where('user_id', $request->user()->id)
+            ->where('exam_paper_id', $examPaper->id)
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if (!$verification) {
+            return response()->json([
+                'message' => '请先完成考前身份核验（证件照 + 人脸比对）后再进入考试',
+                'code' => 'VERIFICATION_REQUIRED',
+            ], 403);
+        }
+
+        if ($verification->status === IdentityVerification::STATUS_SUSPECTED) {
+            return response()->json([
+                'message' => '您的身份核验结果为疑似，请等待监考老师人工确认',
+                'code' => 'VERIFICATION_SUSPECTED',
+            ], 403);
+        }
+
+        if ($verification->status !== IdentityVerification::STATUS_PASSED) {
+            return response()->json([
+                'message' => '身份核验未通过，请重新完成核验',
+                'code' => 'VERIFICATION_FAILED',
+            ], 403);
+        }
+
         $existingRecord = ExamRecord::where('user_id', $request->user()->id)
             ->where('exam_paper_id', $examPaper->id)
             ->where('status', 'in_progress')
